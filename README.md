@@ -1,25 +1,24 @@
-# prayer-time-addon
+# ﷽ claude-prayer-statusline
 
-A [Claude Code](https://claude.ai/claude-code) status line add-on that shows your next Islamic prayer time as a countdown — right in your terminal.
+**Never let Salah slip by in the flow state.** This Claude Code add-on shows your next prayer and how long you have — quietly, in your status bar, all the time.
 
 ```
-main  |  Context remaining: 82%  |  $0.0031
 Dhuhr in 1h 23m (Seattle)
 ```
 
-Works with any existing status line setup. Zero npm dependencies. Auto-detects your location.
+Zero dependencies. Auto-detects your location. Works with any existing status line.
 
 ---
 
 ## Install
 
 ```bash
-git clone https://github.com/afree/claude-prayer-statusline
+git clone https://github.com/AfreenLikeCaffeine/claude-prayer-statusline
 cd claude-prayer-statusline
 node setup.js
 ```
 
-Restart Claude Code — that's it.
+Restart Claude Code. Your prayer countdown will appear on the next line of your status bar.
 
 ## Uninstall
 
@@ -33,10 +32,9 @@ Restores your previous status line configuration.
 
 ## How it works
 
-1. **Location**: Your city is looked up once via [ip-api.com](http://ip-api.com) (free, no API key, no account needed). One HTTP request, nothing stored externally.
-2. **Prayer times**: Calculated locally in pure JavaScript using the **ISNA method** (Fajr and Isha at 15°). No external prayer time API.
-3. **Caching**: Location and prayer times are cached for 1 hour in `~/.claude/prayer-time-addon-cache.json`. Safe to delete at any time.
-4. **Wrapping**: If you already have a custom status line, `setup.js` wraps it — your existing lines stay, and the prayer line is appended below.
+- **Location**: Detected once via [ip-api.com](http://ip-api.com) (free, no API key, no account). Cached locally for 1 hour.
+- **Prayer times**: Calculated on-device in pure JavaScript using the **ISNA method** (Fajr and Isha at 15°). No external prayer API, no internet required after the first geolocation request.
+- **Wrapping**: Already have a custom status line? `setup.js` wraps it — your existing lines stay, the prayer countdown appears below.
 
 ---
 
@@ -49,18 +47,8 @@ Restores your previous status line configuration.
 
 ## Prayer method
 
-Uses the **ISNA (Islamic Society of North America)** method: Fajr and Isha calculated at 15° below the horizon. The Shafi shadow ratio (1x) is used for Asr.
-
-To use a different calculation method, edit the angle values near the top of `prayer-time-addon.js`:
-
-```js
-const fajrAngle  = 15;  // degrees below horizon
-const ishaAngle  = 15;  // degrees below horizon
-```
+Uses **ISNA** (Islamic Society of North America): Fajr and Isha at 15° below the horizon, Asr using the standard shadow ratio.
 
 ---
 
-## Notes
-
-- At extreme latitudes in winter (e.g., above ~60°N), some prayers may not be calculable. The addon silently skips the prayer line in those cases rather than showing an error.
-- The model pricing table in the base status line is separate from this addon and may need periodic updates as Anthropic releases new models.
+**Built with Tawakkul. Shipped with Bismillah. ﷽**
