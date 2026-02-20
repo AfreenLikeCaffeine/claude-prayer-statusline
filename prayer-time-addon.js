@@ -112,8 +112,9 @@ function sunPosition(jd) {
   return { dec, EqT };
 }
 
+// angle = degrees below horizon (positive = below). For Asr, pass negative (sun is above horizon).
 function hourAngle(angle, lat, dec) {
-  const num = Math.cos(angle * DEG) - Math.sin(lat * DEG) * Math.sin(dec);
+  const num = -Math.sin(angle * DEG) - Math.sin(lat * DEG) * Math.sin(dec);
   const den = Math.cos(lat * DEG) * Math.cos(dec);
   if (Math.abs(den) < 1e-10) return null;
   const val = num / den;
@@ -143,8 +144,9 @@ function calcPrayerTimesUTC(date, lat, lon) {
   const sunriseSolar = prayerTime(0.833, 'before');
   const dhuhrSolar   = noon;
   const asrSolar     = (() => {
+    // shadowAngle is the sun's altitude at Asr — negative means above horizon in our convention
     const shadowAngle = Math.atan(1 / (1 + Math.tan(Math.abs(lat * DEG - dec)))) / DEG;
-    return prayerTime(90 - shadowAngle, 'after');
+    return prayerTime(-shadowAngle, 'after');
   })();
   const maghribSolar = prayerTime(0.833, 'after');
   const ishaSolar    = prayerTime(15, 'after');
