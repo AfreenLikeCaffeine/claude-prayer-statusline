@@ -42,10 +42,13 @@ const C = {
 // ---------------------------------------------------------------------------
 const CACHE_FILE = path.join(os.homedir(), '.claude', 'prayer-time-addon-cache.json');
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const CACHE_VERSION = 2; // bump when calculation logic changes to auto-invalidate stale caches
 
 function readCache() {
   try {
-    return JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+    const data = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+    if (data.version !== CACHE_VERSION) return null;
+    return data;
   } catch {
     return null;
   }
@@ -112,8 +115,9 @@ function sunPosition(jd) {
   return { dec, EqT };
 }
 
+// angle = degrees below horizon (positive = below). For Asr, pass negative (sun is above horizon).
 function hourAngle(angle, lat, dec) {
-  const num = Math.cos(angle * DEG) - Math.sin(lat * DEG) * Math.sin(dec);
+  const num = -Math.sin(angle * DEG) - Math.sin(lat * DEG) * Math.sin(dec);
   const den = Math.cos(lat * DEG) * Math.cos(dec);
   if (Math.abs(den) < 1e-10) return null;
   const val = num / den;
@@ -143,8 +147,11 @@ function calcPrayerTimesUTC(date, lat, lon) {
   const sunriseSolar = prayerTime(0.833, 'before');
   const dhuhrSolar   = noon;
   const asrSolar     = (() => {
+    // shadowAngle is the sun's altitude at Asr, in degrees above the horizon (positive = above).
+    // We pass -shadowAngle into prayerTime() because hourAngle() expects an angle in
+    // "degrees below the horizon" (positive = below), so the sign is flipped here.
     const shadowAngle = Math.atan(1 / (1 + Math.tan(Math.abs(lat * DEG - dec)))) / DEG;
-    return prayerTime(90 - shadowAngle, 'after');
+    return prayerTime(-shadowAngle, 'after');
   })();
   const maghribSolar = prayerTime(0.833, 'after');
   const ishaSolar    = prayerTime(15, 'after');
@@ -266,7 +273,7 @@ async function main() {
       locationData = await fetchLocation();
       if (locationData) {
         prayerTimesUTC = calcPrayerTimesUTC(new Date(), locationData.lat, locationData.lon);
-        writeCache({ timestamp: now, location: locationData, prayerTimesUTC });
+        writeCache({ version: CACHE_VERSION, timestamp: now, location: locationData, prayerTimesUTC });
       }
     }
 
