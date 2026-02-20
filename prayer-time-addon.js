@@ -42,10 +42,13 @@ const C = {
 // ---------------------------------------------------------------------------
 const CACHE_FILE = path.join(os.homedir(), '.claude', 'prayer-time-addon-cache.json');
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const CACHE_VERSION = 2; // bump when calculation logic changes to auto-invalidate stale caches
 
 function readCache() {
   try {
-    return JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+    const data = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf8'));
+    if (data.version !== CACHE_VERSION) return null;
+    return data;
   } catch {
     return null;
   }
@@ -268,7 +271,7 @@ async function main() {
       locationData = await fetchLocation();
       if (locationData) {
         prayerTimesUTC = calcPrayerTimesUTC(new Date(), locationData.lat, locationData.lon);
-        writeCache({ timestamp: now, location: locationData, prayerTimesUTC });
+        writeCache({ version: CACHE_VERSION, timestamp: now, location: locationData, prayerTimesUTC });
       }
     }
 
