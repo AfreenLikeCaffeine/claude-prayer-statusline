@@ -147,7 +147,9 @@ function calcPrayerTimesUTC(date, lat, lon) {
   const sunriseSolar = prayerTime(0.833, 'before');
   const dhuhrSolar   = noon;
   const asrSolar     = (() => {
-    // shadowAngle is the sun's altitude at Asr — negative means above horizon in our convention
+    // shadowAngle is the sun's altitude at Asr, in degrees above the horizon (positive = above).
+    // We pass -shadowAngle into prayerTime() because hourAngle() expects an angle in
+    // "degrees below the horizon" (positive = below), so the sign is flipped here.
     const shadowAngle = Math.atan(1 / (1 + Math.tan(Math.abs(lat * DEG - dec)))) / DEG;
     return prayerTime(-shadowAngle, 'after');
   })();
