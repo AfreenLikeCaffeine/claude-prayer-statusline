@@ -8,9 +8,11 @@
  * Works with any existing statusLine.command — wraps it and adds a
  * green prayer countdown line below.
  *
- * Location is auto-detected via ip-api.com (free, no key required).
+ * Location is read from ~/.claude/prayer-time-addon-config.json, which is
+ * created during setup (node setup.js). Run "node setup.js --location" to
+ * update your location.
  * Prayer times are calculated in pure JS using the ISNA method.
- * Location + prayer times are cached for 1 hour in
+ * Prayer times are cached for 1 hour in
  * ~/.claude/prayer-time-addon-cache.json
  *
  * Usage (standalone):
@@ -22,8 +24,6 @@
 
 'use strict';
 
-const https = require('https');
-const http = require('http');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -38,7 +38,22 @@ const C = {
 };
 
 // ---------------------------------------------------------------------------
-// Location + prayer time cache
+// User location config (set once during setup)
+// ---------------------------------------------------------------------------
+const CONFIG_FILE = path.join(os.homedir(), '.claude', 'prayer-time-addon-config.json');
+
+function readConfig() {
+  try {
+    const data = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+    if (typeof data.lat === 'number' && typeof data.lon === 'number') return data;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Prayer time cache (avoids recalculating every minute)
 // ---------------------------------------------------------------------------
 const CACHE_FILE = path.join(os.homedir(), '.claude', 'prayer-time-addon-cache.json');
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
@@ -60,28 +75,6 @@ function writeCache(data) {
   } catch {
     // non-critical
   }
-}
-
-// ---------------------------------------------------------------------------
-// IP geolocation (ip-api.com — free, no key, ~150ms)
-// ---------------------------------------------------------------------------
-function fetchLocation() {
-  return new Promise((resolve) => {
-    const req = http.get('http://ip-api.com/json/?fields=lat,lon,city,timezone', (res) => {
-      let body = '';
-      res.on('data', d => { body += d; });
-      res.on('end', () => {
-        try {
-          const j = JSON.parse(body);
-          resolve({ lat: j.lat, lon: j.lon, city: j.city, timezone: j.timezone });
-        } catch {
-          resolve(null);
-        }
-      });
-    });
-    req.on('error', () => resolve(null));
-    req.setTimeout(4000, () => { req.destroy(); resolve(null); });
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -259,19 +252,18 @@ async function main() {
   // Calculate prayer line
   let prayerLine = '';
   try {
-    let locationData = null;
+    const locationData = readConfig();
     let prayerTimesUTC = null;
 
-    const cache = readCache();
-    const now = Date.now();
-
-    if (cache && cache.timestamp && (now - cache.timestamp) < CACHE_TTL_MS &&
-        cache.location && cache.prayerTimesUTC) {
-      locationData = cache.location;
-      prayerTimesUTC = cache.prayerTimesUTC;
+    if (!locationData) {
+      prayerLine = `${C.green}Prayer: location not configured — run setup.js${C.reset}\n`;
     } else {
-      locationData = await fetchLocation();
-      if (locationData) {
+      const cache = readCache();
+      const now = Date.now();
+
+      if (cache && cache.timestamp && (now - cache.timestamp) < CACHE_TTL_MS && cache.prayerTimesUTC) {
+        prayerTimesUTC = cache.prayerTimesUTC;
+      } else {
         prayerTimesUTC = calcPrayerTimesUTC(new Date(), locationData.lat, locationData.lon);
         writeCache({ version: CACHE_VERSION, timestamp: now, location: locationData, prayerTimesUTC });
       }
