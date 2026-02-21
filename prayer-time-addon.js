@@ -166,28 +166,41 @@ function calcPrayerTimesUTC(date, lat, lon) {
 /**
  * Given UTC prayer times and current UTC time (fractional hours),
  * return the next prayer name and minutes remaining.
+ *
+ * Prayer times for western-hemisphere users often exceed 24 UTC hours
+ * (e.g. Maghrib at 25.68, Isha at 27.10) because they fall after UTC midnight
+ * while still being part of the same local calendar day. Normalizing these
+ * to [0, 24) and comparing naively against nowUTC makes them appear "passed"
+ * when they haven't happened yet. Instead we compute "hours until" using
+ * circular arithmetic, which always yields a positive value in (0, 24].
  */
 function nextPrayer(prayerTimesUTC, nowUTC) {
   const names = ['Fajr', 'Sunrise', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
   const now = ((nowUTC % 24) + 24) % 24;
 
+  let best = null;
+
   for (const name of names) {
     const t = prayerTimesUTC[name];
     if (t === null) continue;
     const pt = ((t % 24) + 24) % 24;
-    if (pt > now) {
-      return { name, minutesLeft: Math.round((pt - now) * 60) };
+    // Hours until this prayer — circular, always in (0, 24]
+    const hoursUntil = ((pt - now + 24) % 24) || 24;
+    if (best === null || hoursUntil < best.hoursUntil) {
+      best = { name, hoursUntil, minutesLeft: Math.round(hoursUntil * 60) };
     }
   }
 
-  // All prayers passed — next is Fajr tomorrow
-  const fajr = prayerTimesUTC['Fajr'];
-  if (fajr !== null) {
-    const pt = ((fajr % 24) + 24) % 24;
-    return { name: 'Fajr (tomorrow)', minutesLeft: Math.round(((pt + 24) - now) * 60) };
+  if (!best) return null;
+
+  // Label Fajr as "(tomorrow)" when today's Fajr has already passed
+  // (its normalized UTC time is behind the current UTC time).
+  if (best.name === 'Fajr') {
+    const fajrPt = ((prayerTimesUTC['Fajr'] % 24) + 24) % 24;
+    if (fajrPt < now) best.name = 'Fajr (tomorrow)';
   }
 
-  return null;
+  return { name: best.name, minutesLeft: best.minutesLeft };
 }
 
 function formatMinutes(mins) {
