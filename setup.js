@@ -44,11 +44,9 @@ function writeSettings(settings) {
 // ---- Prompt helper ----
 function prompt(question) {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise(resolve => {
-    rl.question(question, answer => {
-      rl.close();
-      resolve(answer);
-    });
+  return new Promise((resolve, reject) => {
+    rl.on('error', err => { rl.close(); reject(err); });
+    rl.question(question, answer => { rl.close(); resolve(answer); });
   });
 }
 
@@ -56,7 +54,10 @@ function prompt(question) {
 function geocode(query) {
   return new Promise((resolve) => {
     const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=1`;
-    const req = https.get(url, { headers: { 'User-Agent': 'prayer-time-addon/1.0' } }, (res) => {
+    const req = https.get(url, {
+      headers: { 'User-Agent': 'prayer-time-addon/1.0 (https://github.com/AfreenLikeCaffeine/claude-prayer-statusline)' },
+    }, (res) => {
+      if (res.statusCode !== 200) { res.resume(); return resolve(null); }
       let body = '';
       res.on('data', d => { body += d; });
       res.on('end', () => {
@@ -66,11 +67,14 @@ function geocode(query) {
           const r = results[0];
           const lat = parseFloat(r.lat);
           const lon = parseFloat(r.lon);
+          if (!Number.isFinite(lat) || lat < -90 || lat > 90 ||
+              !Number.isFinite(lon) || lon < -180 || lon > 180) return resolve(null);
           const addr = r.address || {};
-          const city = addr.city || addr.town || addr.village || addr.county || r.display_name.split(',')[0].trim();
-          const displayName = r.display_name.length > 80
-            ? r.display_name.substring(0, 77) + '...'
-            : r.display_name;
+          const rawCity = addr.city || addr.town || addr.village || addr.county
+            || (typeof r.display_name === 'string' ? r.display_name.split(',')[0].trim() : '');
+          const city = rawCity.length > 0 ? rawCity.substring(0, 80) : 'Unknown';
+          const dn = typeof r.display_name === 'string' ? r.display_name : city;
+          const displayName = dn.length > 80 ? dn.substring(0, 77) + '...' : dn;
           resolve({ lat, lon, city, displayName });
         } catch {
           resolve(null);
@@ -88,7 +92,7 @@ async function setupLocation() {
   let existingConfig = null;
   try {
     const data = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    if (typeof data.lat === 'number' && typeof data.lon === 'number') existingConfig = data;
+    if (Number.isFinite(data.lat) && Number.isFinite(data.lon)) existingConfig = data;
   } catch {}
 
   if (existingConfig && existingConfig.city) {
@@ -185,10 +189,11 @@ async function install() {
   const existing = settings.statusLine;
   const addonCommand = `node ${cmdPath(addonDest)}`;
 
+  let freshInstall = true;
   if (existing && existing.command) {
     // Already wrapping — avoid double-wrapping
     if (existing.command.includes('prayer-time-addon.js')) {
-      console.log('Prayer time addon is already installed.');
+      freshInstall = false;
     } else {
       // Wrap the existing command
       settings._prayerAddonPreviousStatusLine = existing;
@@ -211,8 +216,12 @@ async function install() {
   // 4. Prompt for location
   await setupLocation();
 
-  console.log('\nPrayer time addon installed!');
-  console.log('Restart Claude Code to see your prayer times.');
+  if (freshInstall) {
+    console.log('\nPrayer time addon installed!');
+    console.log('Restart Claude Code to see your prayer times.');
+  } else {
+    console.log('\nDone. Restart Claude Code to apply any changes.');
+  }
 }
 
 install().catch(e => { console.error(e); process.exit(1); });

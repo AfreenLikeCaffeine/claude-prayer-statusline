@@ -45,7 +45,7 @@ const CONFIG_FILE = path.join(os.homedir(), '.claude', 'prayer-time-addon-config
 function readConfig() {
   try {
     const data = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
-    if (typeof data.lat === 'number' && typeof data.lon === 'number') return data;
+    if (Number.isFinite(data.lat) && Number.isFinite(data.lon)) return data;
     return null;
   } catch {
     return null;
@@ -57,7 +57,7 @@ function readConfig() {
 // ---------------------------------------------------------------------------
 const CACHE_FILE = path.join(os.homedir(), '.claude', 'prayer-time-addon-cache.json');
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
-const CACHE_VERSION = 2; // bump when calculation logic changes to auto-invalidate stale caches
+const CACHE_VERSION = 3; // bump when calculation logic changes to auto-invalidate stale caches
 
 function readCache() {
   try {
@@ -193,11 +193,10 @@ function nextPrayer(prayerTimesUTC, nowUTC) {
 
   if (!best) return null;
 
-  // Label Fajr as "(tomorrow)" when today's Fajr has already passed
-  // (its normalized UTC time is behind the current UTC time).
-  if (best.name === 'Fajr') {
-    const fajrPt = ((prayerTimesUTC['Fajr'] % 24) + 24) % 24;
-    if (fajrPt < now) best.name = 'Fajr (tomorrow)';
+  // Label Fajr as "(tomorrow)" when the circular distance is large (> 12h),
+  // meaning all of today's prayers have passed and we've wrapped to the next day.
+  if (best.name === 'Fajr' && best.hoursUntil > 12) {
+    best.name = 'Fajr (tomorrow)';
   }
 
   return { name: best.name, minutesLeft: best.minutesLeft };
@@ -269,7 +268,7 @@ async function main() {
     let prayerTimesUTC = null;
 
     if (!locationData) {
-      prayerLine = `${C.green}Prayer: location not configured — run setup.js${C.reset}\n`;
+      prayerLine = `${C.green}Prayer: location not configured — run: node setup.js --location${C.reset}\n`;
     } else {
       const cache = readCache();
       const now = Date.now();
