@@ -8,9 +8,11 @@
  * Works with any existing statusLine.command — wraps it and adds a
  * green prayer countdown line below.
  *
- * Location is auto-detected via ip-api.com (free, no key required).
+ * Location is read from ~/.claude/prayer-time-addon-config.json, which is
+ * created during setup (node setup.js). Run "node setup.js --location" to
+ * update your location.
  * Prayer times are calculated in pure JS using the ISNA method.
- * Location + prayer times are cached for 1 hour in
+ * Prayer times are cached for 1 hour in
  * ~/.claude/prayer-time-addon-cache.json
  *
  * Usage (standalone):
@@ -22,8 +24,6 @@
 
 'use strict';
 
-const https = require('https');
-const http = require('http');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -38,11 +38,26 @@ const C = {
 };
 
 // ---------------------------------------------------------------------------
-// Location + prayer time cache
+// User location config (set once during setup)
+// ---------------------------------------------------------------------------
+const CONFIG_FILE = path.join(os.homedir(), '.claude', 'prayer-time-addon-config.json');
+
+function readConfig() {
+  try {
+    const data = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+    if (Number.isFinite(data.lat) && Number.isFinite(data.lon)) return data;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Prayer time cache (avoids recalculating every minute)
 // ---------------------------------------------------------------------------
 const CACHE_FILE = path.join(os.homedir(), '.claude', 'prayer-time-addon-cache.json');
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
-const CACHE_VERSION = 2; // bump when calculation logic changes to auto-invalidate stale caches
+const CACHE_VERSION = 3; // bump when calculation logic changes to auto-invalidate stale caches
 
 function readCache() {
   try {
@@ -60,28 +75,6 @@ function writeCache(data) {
   } catch {
     // non-critical
   }
-}
-
-// ---------------------------------------------------------------------------
-// IP geolocation (ip-api.com — free, no key, ~150ms)
-// ---------------------------------------------------------------------------
-function fetchLocation() {
-  return new Promise((resolve) => {
-    const req = http.get('http://ip-api.com/json/?fields=lat,lon,city,timezone', (res) => {
-      let body = '';
-      res.on('data', d => { body += d; });
-      res.on('end', () => {
-        try {
-          const j = JSON.parse(body);
-          resolve({ lat: j.lat, lon: j.lon, city: j.city, timezone: j.timezone });
-        } catch {
-          resolve(null);
-        }
-      });
-    });
-    req.on('error', () => resolve(null));
-    req.setTimeout(4000, () => { req.destroy(); resolve(null); });
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -173,28 +166,40 @@ function calcPrayerTimesUTC(date, lat, lon) {
 /**
  * Given UTC prayer times and current UTC time (fractional hours),
  * return the next prayer name and minutes remaining.
+ *
+ * Prayer times for western-hemisphere users often exceed 24 UTC hours
+ * (e.g. Maghrib at 25.68, Isha at 27.10) because they fall after UTC midnight
+ * while still being part of the same local calendar day. Normalizing these
+ * to [0, 24) and comparing naively against nowUTC makes them appear "passed"
+ * when they haven't happened yet. Instead we compute "hours until" using
+ * circular arithmetic, which always yields a positive value in (0, 24].
  */
 function nextPrayer(prayerTimesUTC, nowUTC) {
   const names = ['Fajr', 'Sunrise', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
   const now = ((nowUTC % 24) + 24) % 24;
 
+  let best = null;
+
   for (const name of names) {
     const t = prayerTimesUTC[name];
     if (t === null) continue;
     const pt = ((t % 24) + 24) % 24;
-    if (pt > now) {
-      return { name, minutesLeft: Math.round((pt - now) * 60) };
+    // Hours until this prayer — circular, always in (0, 24]
+    const hoursUntil = ((pt - now + 24) % 24) || 24;
+    if (best === null || hoursUntil < best.hoursUntil) {
+      best = { name, hoursUntil, minutesLeft: Math.round(hoursUntil * 60) };
     }
   }
 
-  // All prayers passed — next is Fajr tomorrow
-  const fajr = prayerTimesUTC['Fajr'];
-  if (fajr !== null) {
-    const pt = ((fajr % 24) + 24) % 24;
-    return { name: 'Fajr (tomorrow)', minutesLeft: Math.round(((pt + 24) - now) * 60) };
+  if (!best) return null;
+
+  // Label Fajr as "(tomorrow)" when the circular distance is large (> 12h),
+  // meaning all of today's prayers have passed and we've wrapped to the next day.
+  if (best.name === 'Fajr' && best.hoursUntil > 12) {
+    best.name = 'Fajr (tomorrow)';
   }
 
-  return null;
+  return { name: best.name, minutesLeft: best.minutesLeft };
 }
 
 function formatMinutes(mins) {
@@ -259,19 +264,18 @@ async function main() {
   // Calculate prayer line
   let prayerLine = '';
   try {
-    let locationData = null;
+    const locationData = readConfig();
     let prayerTimesUTC = null;
 
-    const cache = readCache();
-    const now = Date.now();
-
-    if (cache && cache.timestamp && (now - cache.timestamp) < CACHE_TTL_MS &&
-        cache.location && cache.prayerTimesUTC) {
-      locationData = cache.location;
-      prayerTimesUTC = cache.prayerTimesUTC;
+    if (!locationData) {
+      prayerLine = `${C.green}Prayer: location not configured — run: node setup.js --location${C.reset}\n`;
     } else {
-      locationData = await fetchLocation();
-      if (locationData) {
+      const cache = readCache();
+      const now = Date.now();
+
+      if (cache && cache.timestamp && (now - cache.timestamp) < CACHE_TTL_MS && cache.prayerTimesUTC) {
+        prayerTimesUTC = cache.prayerTimesUTC;
+      } else {
         prayerTimesUTC = calcPrayerTimesUTC(new Date(), locationData.lat, locationData.lon);
         writeCache({ version: CACHE_VERSION, timestamp: now, location: locationData, prayerTimesUTC });
       }

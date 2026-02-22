@@ -6,7 +6,7 @@
 Dhuhr in 1h 23m (Seattle)
 ```
 
-Zero dependencies. Auto-detects your location. Works with any existing status line.
+Zero dependencies. One-time location setup. Works with any existing status line.
 
 ---
 
@@ -18,7 +18,13 @@ cd claude-prayer-statusline
 node setup.js
 ```
 
-Restart Claude Code. Your prayer countdown will appear on the next line of your status bar.
+Setup will ask for your city once and save it. Restart Claude Code — your prayer countdown will appear on the next line of your status bar.
+
+### Update your location
+
+```bash
+node setup.js --location
+```
 
 ## Uninstall
 
@@ -32,8 +38,8 @@ Restores your previous status line configuration.
 
 ## How it works
 
-- **Location**: Detected once via [ip-api.com](http://ip-api.com) (free, no API key, no account). Cached locally for 1 hour.
-- **Prayer times**: Calculated on-device in pure JavaScript using the **ISNA method** (Fajr and Isha at 15°). No external prayer API, no internet required after the first geolocation request.
+- **Location**: Entered once during `node setup.js` and stored in `~/.claude/prayer-time-addon-config.json`. Geocoded via [OpenStreetMap Nominatim](https://nominatim.openstreetmap.org) (free, no API key). Update anytime with `node setup.js --location`.
+- **Prayer times**: Calculated on-device in pure JavaScript using the **ISNA method** (Fajr and Isha at 15°). No external prayer API. Times are cached for 1 hour — no repeated lookups.
 - **Wrapping**: Already have a custom status line? `setup.js` wraps it — your existing lines stay, the prayer countdown appears below.
 
 ---
